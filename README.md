@@ -2,6 +2,11 @@
 A mockup plugin for CUDA accelerators
 
 This plugin deceives the agent and manager to think as if there are CUDA devices.
-The configuration follows `cuda-mock.toml` and this file should be placed in the same location of `agent.toml`.
+The configuration follows `cuda-mock.toml` placed in the same location of `agent.toml`.
+Please refer the sample configurations in the `configs` directory and copy one of them as a starting point.
 
-Please refer the sample configurations in the `configs` directory.
+The statistics are randomly generated in reasonable ranges, but it may seem like "jumping around" because there is no smoothing mechanism of generated values.
+The configurations for fractional/discrete mode, fraction size, and device masks in etcd are exactly same as the original plugin.
+
+The containers are created without any real CUDA device mounts but with `BACKENDAI_MOCK_CUDA_DEVICES` and `BACKENDAI_MOCK_CUDA_DEVICE_COUNT` environment variables.
+Since the manager does not know if the reported devices are real or not, you can start any CUDA-only containers (but of course they won't work as expected).
