@@ -21,7 +21,6 @@ from typing import (
     Sequence,
     Set,
     Tuple,
-    cast,
 )
 
 import aiodocker

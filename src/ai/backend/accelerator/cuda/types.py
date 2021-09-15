@@ -2,6 +2,7 @@ import attr
 from typing import (
     AsyncContextManager,
     NamedTuple,
+    Protocol,
     TypeVar,
 )
 
