@@ -1,5 +1,9 @@
 import attr
-from typing import NamedTuple
+from typing import (
+    AsyncContextManager,
+    NamedTuple,
+    TypeVar,
+)
 
 from ai.backend.agent.resources import AbstractComputeDevice
 from ai.backend.common.types import DeviceId
@@ -32,3 +36,27 @@ class ProcessStat(NamedTuple):
     mem_util: int
     enc_util: int
     dec_util: int
+
+
+class SupportsAsyncClose(Protocol):
+    async def close(self) -> None:
+        ...
+
+
+_SupportsAsyncCloseT = TypeVar('_SupportsAsyncCloseT', bound=SupportsAsyncClose)
+
+
+class closing_async(AsyncContextManager[_SupportsAsyncCloseT]):
+    """
+    A local copy of ai.backend.agent.utils.closing_async()
+    to avoid version compatibility issues
+    """
+
+    def __init__(self, obj: _SupportsAsyncCloseT) -> None:
+        self.obj = obj
+
+    async def __aenter__(self) -> _SupportsAsyncCloseT:
+        return self.obj
+
+    async def __aexit__(self, *exc_info) -> None:
+        await self.obj.close()

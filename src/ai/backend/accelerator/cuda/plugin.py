@@ -25,7 +25,6 @@ from typing import (
 )
 
 import aiodocker
-import aiofiles
 import trafaret as t
 
 from ai.backend.agent.types import Container
@@ -54,7 +53,7 @@ from ai.backend.common.types import (
 from ai.backend.common import validators as tx
 from . import __version__
 from .defs import AllocationModes
-from .types import CUDADevice, DeviceStat
+from .types import CUDADevice, DeviceStat, closing_async
 
 __all__ = (
     'PREFIX',
@@ -380,39 +379,39 @@ class CUDAPlugin(AbstractComputePlugin):
                 mem_stats[cid] = 0
                 mem_sizes[cid] = 0
                 util_stats[cid] = 0.0
-            agent = cast(DockerAgent, ctx.agent)
-            for cid in container_ids:
-                container = agent.docker.containers.container(cid)
-                await container.show()
-                resource_spec = await get_resource_spec_from_container(container)
-                if resource_spec is None:
-                    continue
-                allocations = resource_spec.allocations.get(self.key, {})
-                for slot_name, per_dev_alloc in allocations.items():
-                    assignment_per_container[cid] = per_dev_alloc
-                    for device_id, alloc in per_dev_alloc.items():
-                        device_info = self._find_device(device_id)
-                        device_mem_size = device_info.memory_size
-                        device_smp_count = device_info.processing_units
-                        device_capacity = self._get_share_raw(
-                            device_mem_size,
-                            device_smp_count,
-                        )
-                        if device_info is None:
-                            continue
-                        if slot_name == SlotName('cuda.shares'):
-                            if alloc > 0:
-                                util_stats[cid] += min(
-                                    100.0,
-                                    random.uniform(0, 100) * float(device_capacity / alloc),
-                                )
-                            mem_stats[cid] = int(device_mem_size * random.uniform(0.2, 1.0) * alloc)
-                            mem_sizes[cid] += device_mem_size * alloc
-                        else:
-                            util_stats[cid] += random.uniform(0, 100)
-                            mem_stats[cid] = int(device_mem_size * random.uniform(0.2, 1.0))
-                            mem_sizes[cid] += device_mem_size
-                        device_occurrences_per_container[cid] += 1
+            async with closing_async(aiodocker.Docker()) as docker:
+                for cid in container_ids:
+                    container = docker.containers.container(cid)
+                    await container.show()
+                    resource_spec = await get_resource_spec_from_container(container)
+                    if resource_spec is None:
+                        continue
+                    allocations = resource_spec.allocations.get(self.key, {})
+                    for slot_name, per_dev_alloc in allocations.items():
+                        assignment_per_container[cid] = per_dev_alloc
+                        for device_id, alloc in per_dev_alloc.items():
+                            device_info = self._find_device(device_id)
+                            device_mem_size = device_info.memory_size
+                            device_smp_count = device_info.processing_units
+                            device_capacity = self._get_share_raw(
+                                device_mem_size,
+                                device_smp_count,
+                            )
+                            if device_info is None:
+                                continue
+                            if slot_name == SlotName('cuda.shares'):
+                                if alloc > 0:
+                                    util_stats[cid] += min(
+                                        100.0,
+                                        random.uniform(0, 100) * float(device_capacity / alloc),
+                                    )
+                                mem_stats[cid] = int(device_mem_size * random.uniform(0.2, 1.0) * alloc)
+                                mem_sizes[cid] += device_mem_size * alloc
+                            else:
+                                util_stats[cid] += random.uniform(0, 100)
+                                mem_stats[cid] = int(device_mem_size * random.uniform(0.2, 1.0))
+                                mem_sizes[cid] += device_mem_size
+                            device_occurrences_per_container[cid] += 1
         return [
             ContainerMeasurement(
                 MetricKey('cuda_mem'),
