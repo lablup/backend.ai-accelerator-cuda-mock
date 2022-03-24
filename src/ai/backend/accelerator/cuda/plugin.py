@@ -30,8 +30,8 @@ from ai.backend.agent.types import Container
 from ai.backend.agent.docker.agent import DockerAgent
 from ai.backend.agent.exception import InitializationError
 from ai.backend.agent.resources import (
-    AbstractComputePlugin, AbstractAllocMap, DeviceSlotInfo,
-    DiscretePropertyAllocMap, FractionAllocMap,
+    AbstractComputePlugin, AbstractAllocMap, AllocationStrategy,
+    DeviceSlotInfo, DiscretePropertyAllocMap, FractionAllocMap,
 )
 try:
     from ai.backend.agent.resources import get_resource_spec_from_container  # type: ignore
@@ -221,7 +221,7 @@ class CUDAPlugin(AbstractComputePlugin):
             else:
                 device_id = DeviceId(dev_info['mother_uuid'])
             all_devices.append(CUDADevice(
-                device_id=device_id,
+                device_id=str(device_id),
                 hw_location=f"0000:99:{idx:02d}.0",
                 mother_uuid=dev_info['mother_uuid'],
                 numa_node=dev_info['numa_node'],
@@ -360,7 +360,7 @@ class CUDAPlugin(AbstractComputePlugin):
     
     def _find_device(self, device_id: DeviceId) -> CUDADevice | None:
         for device_info in self._all_devices:
-            if device_info.device_id == device_id:
+            if str(device_info.device_id) == device_id:
                 return device_info
         return None
 
@@ -404,7 +404,7 @@ class CUDAPlugin(AbstractComputePlugin):
                                         100.0,
                                         random.uniform(0, 100) * float(device_capacity / alloc),
                                     )
-                                mem_stats[cid] = int(device_mem_size * random.uniform(0.2, 1.0) * alloc)
+                                mem_stats[cid] = int(device_mem_size * random.uniform(0.2, 1.0) * float(alloc))
                                 mem_sizes[cid] += device_mem_size * alloc
                             else:
                                 util_stats[cid] += random.uniform(0, 100)
