@@ -18,6 +18,7 @@ from typing import (
     List,
     Mapping,
     MutableMapping,
+    Optional,
     Sequence,
     Set,
     Tuple,
@@ -27,10 +28,9 @@ import aiodocker
 import trafaret as t
 
 from ai.backend.agent.types import Container
-from ai.backend.agent.docker.agent import DockerAgent
 from ai.backend.agent.exception import InitializationError
 from ai.backend.agent.resources import (
-    AbstractComputePlugin, AbstractAllocMap, AllocationStrategy,
+    AbstractComputePlugin, AbstractAllocMap,
     DeviceSlotInfo, DiscretePropertyAllocMap, FractionAllocMap,
 )
 try:
@@ -97,7 +97,7 @@ class CUDAPlugin(AbstractComputePlugin):
     reserved_memory: int = 64 * (2 ** 20)  # 64 MiB (only for fractional)
     quantum_size: Decimal = Decimal("0.1")
 
-    _all_devices: Sequence[CUDADevice] = None
+    _all_devices: Optional[Sequence[CUDADevice]] = None
     _mode: AllocationModes = AllocationModes.DISCRETE
     _unit_mem: int = 2 * (2 ** 30)  # 2 GiB
     _unit_proc: int = 8             # number of SMPs
@@ -120,7 +120,8 @@ class CUDAPlugin(AbstractComputePlugin):
                 self.enabled = False
                 return
 
-        if self._mode == AllocationModes.DISCRETE:            self.slot_types.append(('cuda.device', 'count'))  # type: ignore  # (only updated here)
+        if self._mode == AllocationModes.DISCRETE:
+            self.slot_types.append(('cuda.device', 'count'))  # type: ignore  # (only updated here)
         elif self._mode == AllocationModes.FRACTIONAL:
             self.slot_types.append(('cuda.shares', 'count'))  # type: ignore  # (only updated here)
         else:
@@ -169,7 +170,7 @@ class CUDAPlugin(AbstractComputePlugin):
         raw_device_mask = self.plugin_config.get('device_mask')
         if raw_device_mask is not None:
             self.device_mask = [
-                *map(lambda dev_id: DeviceId(dev_id), raw_device_mask.split(','))
+                *map(lambda dev_id: DeviceId(dev_id), raw_device_mask.split(',')),
             ]
         if self._mode == AllocationModes.FRACTIONAL:
             raw_reserved_memory = self.plugin_config.get('reserved_memory')
@@ -277,7 +278,7 @@ class CUDAPlugin(AbstractComputePlugin):
         }
 
     async def gather_node_measures(self, ctx: StatContext) -> Sequence[NodeMeasurement]:
-        dev_count = len(self._all_devices)
+        dev_count = len(self._all_devices or [])
         mem_avail_total = 0
         mem_used_total = 0
         mem_stats = {}
@@ -357,8 +358,10 @@ class CUDAPlugin(AbstractComputePlugin):
                 per_device=temperature,
             ),
         ]
-    
+
     def _find_device(self, device_id: DeviceId) -> CUDADevice | None:
+        if self._all_devices is None:
+            return None
         for device_info in self._all_devices:
             if str(device_info.device_id) == device_id:
                 return device_info
@@ -390,21 +393,22 @@ class CUDAPlugin(AbstractComputePlugin):
                         assignment_per_container[cid] = per_dev_alloc
                         for device_id, alloc in per_dev_alloc.items():
                             device_info = self._find_device(device_id)
+                            if device_info is None:
+                                continue
                             device_mem_size = device_info.memory_size
                             device_smp_count = device_info.processing_units
                             device_capacity = self._get_share_raw(
                                 device_mem_size,
                                 device_smp_count,
                             )
-                            if device_info is None:
-                                continue
                             if slot_name == SlotName('cuda.shares'):
                                 if alloc > 0:
                                     util_stats[cid] += min(
                                         100.0,
                                         random.uniform(0, 100) * float(device_capacity / alloc),
                                     )
-                                mem_stats[cid] = int(device_mem_size * random.uniform(0.2, 1.0) * float(alloc))
+                                mem_stats[cid] = int(
+                                    device_mem_size * random.uniform(0.2, 1.0) * float(alloc))
                                 mem_sizes[cid] += device_mem_size * alloc
                             else:
                                 util_stats[cid] += random.uniform(0, 100)
@@ -586,32 +590,32 @@ class CUDAPlugin(AbstractComputePlugin):
             for slot_name, _ in self.slot_types:
                 alloc_map.apply_allocation({
                     slot_name: resource_spec.allocations.get(
-                        DeviceName('cuda'), {}
+                        DeviceName('cuda'), {},
                     ).get(
                         slot_name, {
                             dev_id: Decimal(0)
                             for dev_id, dev_slot_info in
                             alloc_map.device_slots.items()
                             if dev_slot_info.slot_name == slot_name
-                        }
-                    )
+                        },
+                    ),
                 })
         else:  # older agents without lablup/backend.ai-agent#180
             if self._mode == AllocationModes.DISCRETE:
                 alloc_map.allocations[SlotName('cuda.device')].update(
                     resource_spec.allocations.get(
-                        DeviceName('cuda'), {}
+                        DeviceName('cuda'), {},
                     ).get(
-                        SlotName('cuda.device'), {}
-                    )
+                        SlotName('cuda.device'), {},
+                    ),
                 )
             elif self._mode == AllocationModes.FRACTIONAL:
                 alloc_map.allocations[SlotName('cuda.shares')].update(
                     resource_spec.allocations.get(
-                        DeviceName('cuda'), {}
+                        DeviceName('cuda'), {},
                     ).get(
-                        SlotName('cuda.shares'), {}
-                    )
+                        SlotName('cuda.shares'), {},
+                    ),
                 )
 
     async def get_attached_devices(
@@ -627,7 +631,7 @@ class CUDAPlugin(AbstractComputePlugin):
             if device.device_id in device_ids:
                 if self._mode == AllocationModes.FRACTIONAL and not device.is_mig_device:
                     mem, proc = self._share_to_spec(
-                        device_alloc[SlotName('cuda.shares')][device.device_id]
+                        device_alloc[SlotName('cuda.shares')][device.device_id],
                     )
                 else:
                     proc = device.processing_units
@@ -638,7 +642,7 @@ class CUDAPlugin(AbstractComputePlugin):
                     'data': {
                         'smp': proc,
                         'mem': mem,
-                    }
+                    },
                 })
         return attached_devices
 
