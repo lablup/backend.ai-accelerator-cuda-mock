@@ -1,3 +1,5 @@
+NOTE: This repository is merged into [Backend.AI mono-repo](https://github.com/lablup/backend.ai) from July 2022. Please leave your issue / PR to the Backend.AI repository.
+
 # backend.ai-accelerator-cuda-mock
 A mockup plugin for CUDA accelerators
 
